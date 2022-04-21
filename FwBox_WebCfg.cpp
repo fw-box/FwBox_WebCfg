@@ -9,12 +9,17 @@
 //   
 //
 // Required Library :
+//   PubSubClient
+//   https://github.com/fw-box/FwBox_Preferences
 //
 
 #include "FwBox_WebCfg.h"
 
-
-WebServer FwBox_WebCfg::SettingServer;
+#if defined(ESP32)
+    WebServer FwBox_WebCfg::SettingServer;
+#else
+    ESP8266WebServer FwBox_WebCfg::SettingServer;
+#endif
 bool FwBox_WebCfg::SettingServerRunning = false;
 String FwBox_WebCfg::MqttBrokerIp = "";
 String FwBox_WebCfg::ItemName[ITEM_COUNT];
@@ -30,25 +35,39 @@ FwBox_WebCfg::FwBox_WebCfg()
     }
 }
 
+int FwBox_WebCfg::earlyBegin()
+{
+    FwBox_Preferences Prefs;
+    Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
+    //Prefs.dumpPairList();
+    WifiSsid = Prefs.getString("WIFI_SSID");
+    WifiPassword = Prefs.getString("WIFI_PW");
+    Prefs.end();
+
+    Serial.printf("WIFI_SSID : %s\n", WifiSsid.c_str());
+    Serial.printf("WIFI_PW : %s\n", WifiPassword.c_str());
+
+    WiFi.mode(WIFI_AP_STA);
+    if (WifiSsid.length() > 0) {
+        WiFi.begin(WifiSsid.c_str(), WifiPassword.c_str());
+    }
+    else {
+        String s_id = getMac().substring(8);
+        s_id = "FW-BOX_" + s_id;
+        WiFi.softAP(s_id.c_str(), "");
+    }
+
+    FwBox_WebCfg::EarlyBeginRun = true;
+}
+
 int FwBox_WebCfg::begin()
 {
     FwBox_WebCfg::SettingServerRunning = false;
-    String str_ssid = "";
-    String str_pass = "";
 
-    Preferences Prefs;
-    Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
-    str_ssid = Prefs.getString("WIFI_SSID");
-    str_pass = Prefs.getString("WIFI_PW");
-    Prefs.end();
+    Serial.print("FwBox_WebCfg::EarlyBeginRun = ");
+    Serial.println(FwBox_WebCfg::EarlyBeginRun);
 
-    String s_id = getMac().substring(8);
-    s_id = "FW-BOX_" + s_id;
-
-    WiFi.mode(WIFI_AP_STA);
-    if (str_ssid.length() > 0) {
-        WiFi.begin(str_ssid.c_str(), str_pass.c_str());
-
+    if (FwBox_WebCfg::EarlyBeginRun == true) {
         for (int ii = 0; ii < 50; ii++) {
             if (WiFi.status() == WL_CONNECTED)
                 break;
@@ -62,11 +81,42 @@ int FwBox_WebCfg::begin()
         Serial.println(WiFi.localIP());
     }
     else {
-        WiFi.softAP(s_id.c_str(), "");
+        FwBox_Preferences Prefs;
+        Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
+        //Prefs.dumpPairList();
+        WifiSsid = Prefs.getString("WIFI_SSID");
+        WifiPassword = Prefs.getString("WIFI_PW");
+        Prefs.end();
+
+        Serial.printf("WIFI_SSID : %s\n", WifiSsid.c_str());
+        Serial.printf("WIFI_PW : %s\n", WifiPassword.c_str());
+
+        WiFi.mode(WIFI_AP_STA);
+        if (WifiSsid.length() > 0) {
+            WiFi.begin(WifiSsid.c_str(), WifiPassword.c_str());
+
+            for (int ii = 0; ii < 50; ii++) {
+                if (WiFi.status() == WL_CONNECTED)
+                    break;
+                delay(500);
+                Serial.print(".");
+            }
+
+            Serial.println("");
+            Serial.println("WiFi connected");
+            Serial.println("IP address: ");
+            Serial.println(WiFi.localIP());
+        }
+        else {
+            String s_id = getMac().substring(8);
+            s_id = "FW-BOX_" + s_id;
+            WiFi.softAP(s_id.c_str(), "");
+        }
     }
 
     FwBox_WebCfg::SettingServer.on("/", handleRoot);
 
+#if defined(ESP32)
     FwBox_WebCfg::SettingServer.on("/update", HTTP_POST, []() {
       FwBox_WebCfg::SettingServer.sendHeader("Connection", "close");
       FwBox_WebCfg::SettingServer.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
@@ -94,6 +144,36 @@ int FwBox_WebCfg::begin()
         Serial.printf("Update Failed Unexpectedly (likely broken connection): status=%d\n", upload.status);
       }
     });
+#else
+    FwBox_WebCfg::SettingServer.on("/update", HTTP_POST, []() {
+      FwBox_WebCfg::SettingServer.sendHeader("Connection", "close");
+      FwBox_WebCfg::SettingServer.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+      ESP.restart();
+    }, []() {
+      HTTPUpload& upload = FwBox_WebCfg::SettingServer.upload();
+      if (upload.status == UPLOAD_FILE_START) {
+        Serial.setDebugOutput(true);
+        WiFiUDP::stopAll();
+        Serial.printf("Update: %s\n", upload.filename.c_str());
+        uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+        if (!Update.begin(maxSketchSpace)) { //start with max available size
+          Update.printError(Serial);
+        }
+      } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+          Update.printError(Serial);
+        }
+      } else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) { //true to set the size to the current progress
+          Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+        } else {
+          Update.printError(Serial);
+        }
+        Serial.setDebugOutput(false);
+      }
+      yield();
+    });
+#endif
 
     FwBox_WebCfg::SettingServer.begin();
     Serial.println("HTTP server started");
@@ -116,7 +196,7 @@ void FwBox_WebCfg::handleRoot()
     String str_pass = "";
     //String str_ip = "";
     bool user_input = false;
-    Preferences Prefs;
+    FwBox_Preferences Prefs;
     Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
     for (uint8_t ai = 0; ai < FwBox_WebCfg::SettingServer.args(); ai++) {
         if (FwBox_WebCfg::SettingServer.argName(ai).equals("ssid") == true) {
@@ -155,7 +235,7 @@ void FwBox_WebCfg::handleRoot()
         Serial.println(str_ssid);
         Serial.print("WEB PASSWORD = ");
         Serial.println(str_pass);
-        //Preferences Prefs;
+        //FwBox_Preferences Prefs;
         Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
         /*if (str_ip.length() > 0) {
             FwBox_WebCfg::MqttBrokerIp = str_ip;
@@ -169,7 +249,6 @@ void FwBox_WebCfg::handleRoot()
     }
 
     String str_item_list = "";
-    //Preferences Prefs;
     Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
     str_ssid = Prefs.getString("WIFI_SSID");
     str_pass = Prefs.getString("WIFI_PW");
@@ -203,17 +282,21 @@ void FwBox_WebCfg::handleRoot()
     }
     Prefs.end();
 
-    char temp[1024+512];
-    char html_cfg[] PROGMEM = 
-"<!DOCTYPE html>\
+    //char temp[2048];
+//#if defined(ESP32)
+//    static const char html_cfg[] PROGMEM = 
+//#else
+//    static const char html_cfg_a[] PROGMEM = 
+//#endif
+    static const char html_cfg_a[] PROGMEM = "<!DOCTYPE html>\
 <html>\
 <head>\
 <title>ESP32 Demo</title>\
 <style>\
 body{font-family:Arial;}\
-form{width:90%;}\
-p{width:100%;text-align:center;}\
-div{width:100%;font-size:4.5vw;text-align:center;}\
+form{width:90%%;}\
+p{width:100%%;text-align:center;}\
+div{width:100%%;font-size:4.5vw;text-align:center;}\
 input{font-size:4.5vw;}\
 select{font-size:4.5vw;}\
 option{font-size:4.5vw;}\
@@ -225,24 +308,49 @@ option{font-size:4.5vw;}\
 <center>\
 <form action='/' method='post'>\
 <h1 style='font-size:6vw;'>WebCfg</h1>\
-<p><div class='it'>WiFi SSID<div><input type='text' name='ssid' value='%s'></div></div></p>\
-<p><div class='it'>WiFi Password<div><input type='password' name='pw' value='%s'></div></div></p>\
-%s\
-<p style='text-align:end;'><input type='submit' value=' Submit '></p>\
+<p><div class='it'>WiFi SSID<div><input type='text' name='ssid' value='";
+    static const char html_cfg_b[] PROGMEM = "'></div></div></p>\
+<p><div class='it'>WiFi Password<div><input type='password' name='pw' value='";
+    static const char html_cfg_c[] PROGMEM = "'></div></div></p>";
+    static const char html_cfg_d[] PROGMEM = "<p style='text-align:end;'><input type='submit' value=' Submit '></p>\
 </form><br>\
 <p><div class='it2'>Firmware Update<div><form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form></div></div></p>\
 <p style='font-size:4.5vw;text-align:end;'><a href='https://fw-box.com'>https://fw-box.com</a></p>\
 </center>\
 </body>\
 </html>";
-    sprintf(temp, html_cfg, str_ssid.c_str(), str_pass.c_str(), str_item_list.c_str());
+    int content_len = strlen(html_cfg_a);
+    content_len += strlen(str_ssid.c_str());
+    content_len += strlen(html_cfg_b);
+    content_len += strlen(str_pass.c_str());
+    content_len += strlen(html_cfg_c);
+    content_len += strlen(str_item_list.c_str());
+    content_len += strlen(html_cfg_d);
+    //Serial.printf("Original HTML data length = %d\n", strlen(html_cfg));
 
-    Serial.printf("HTML data length = %d\n", strlen(temp));
-    FwBox_WebCfg::SettingServer.send(200, "text/html", temp);
+    //sprintf_P(temp, html_cfg, str_ssid.c_str(), str_pass.c_str(), str_item_list.c_str());
+    //strcpy(temp, html_cfg);
+
+    //Serial.printf("HTML data length = %d\n", strlen(temp));
+    FwBox_WebCfg::SettingServer.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    FwBox_WebCfg::SettingServer.sendHeader("Pragma", "no-cache");
+    FwBox_WebCfg::SettingServer.sendHeader("Expires", "-1");
+    FwBox_WebCfg::SettingServer.setContentLength(content_len);
+    // here begin chunked transfer
+    FwBox_WebCfg::SettingServer.send(200, "text/html", "");
+    FwBox_WebCfg::SettingServer.sendContent(html_cfg_a);
+    FwBox_WebCfg::SettingServer.sendContent(str_ssid.c_str());
+    FwBox_WebCfg::SettingServer.sendContent(html_cfg_b);
+    FwBox_WebCfg::SettingServer.sendContent(str_pass.c_str());
+    FwBox_WebCfg::SettingServer.sendContent(html_cfg_c);
+    FwBox_WebCfg::SettingServer.sendContent(str_item_list.c_str());
+    FwBox_WebCfg::SettingServer.sendContent(html_cfg_d);
+    FwBox_WebCfg::SettingServer.sendContent(F("")); // this tells web client that transfer is done
+    FwBox_WebCfg::SettingServer.client().stop();
 
     if (user_input == true) {
         Serial.println("Restarting...");
-        delay(500);
+        delay(5000);
         ESP.restart();
         while (1)
             delay(100);
@@ -272,7 +380,7 @@ void FwBox_WebCfg::setItem(int idx, String name, String itemKey, int itemType)
 String FwBox_WebCfg::getItemValueString(const char* key)
 {
     String str_temp = "";
-    Preferences Prefs;
+    FwBox_Preferences Prefs;
     Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
     str_temp = Prefs.getString(key);
     Prefs.end();
@@ -282,7 +390,7 @@ String FwBox_WebCfg::getItemValueString(const char* key)
 int FwBox_WebCfg::getItemValueInt(const char* key, const int32_t defaultValue)
 {
     int i_temp = defaultValue;
-    Preferences Prefs;
+    FwBox_Preferences Prefs;
     Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
     i_temp = Prefs.getInt(key, defaultValue);
     Prefs.end();

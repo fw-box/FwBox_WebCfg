@@ -9,6 +9,8 @@
 //   
 //
 // Required Library :
+//   PubSubClient
+//   https://github.com/fw-box/FwBox_Preferences
 //
 
 #ifndef __FWBOX_WEB_CFG_H__
@@ -19,13 +21,17 @@
   #include <WiFi.h>
   #include <WebServer.h>
   #include <Update.h>
+  //#include <Preferences.h>
 #else
   #include <ESP8266WiFi.h>
   #include <ESP8266httpUpdate.h>
   #include <ESP8266WebServer.h>
+  //#include <LittleFS.h>
+  //#define ICACHE_RODATA_ATTR  __attribute__((section(".irom.text")))
+  //#define PROGMEM ICACHE_RODATA_ATTR
 #endif
 #include <PubSubClient.h>
-#include <Preferences.h>
+#include "FwBox_Preferences.h"
 
 #define ITEM_COUNT 5
 #define ITEM_TYPE_STRING 1
@@ -44,6 +50,7 @@ public:
     //          1 - Failed
     //
     int begin();
+    int earlyBegin();
 
     void handle();
     String getMac();
@@ -67,6 +74,15 @@ public:
     void setItem(int idx, String name, String itemKey, int itemType);
     String getItemValueString(const char* key);
     int getItemValueInt(const char* key, const int32_t defaultValue);
+
+    void configFileBegin();
+    String configFileGetString(const char* key);
+    void configFileEnd();
+
+private:
+    String WifiSsid = "";
+    String WifiPassword = "";
+    bool EarlyBeginRun = false;
 };
 
 

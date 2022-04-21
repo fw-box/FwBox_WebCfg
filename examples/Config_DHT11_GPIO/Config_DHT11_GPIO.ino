@@ -19,6 +19,9 @@ int GpioDht = -1;
 void setup() {
   Serial.begin(115200);
 
+  //
+  // Create an integer input.
+  //
   WebCfg.setItem(0, "DHT11 GPIO", "DHT11_GPIO", ITEM_TYPE_INT);
   WebCfg.begin();
 
