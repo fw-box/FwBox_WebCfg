@@ -25,6 +25,9 @@ void setup() {
   WebCfg.setItem(0, "DHT11 GPIO", "DHT11_GPIO", ITEM_TYPE_INT);
   WebCfg.begin();
 
+  //
+  // Get the GPIO of DHT from web config.
+  //
   GpioDht = WebCfg.getItemValueInt("DHT11_GPIO", -1);
   Serial.printf("DHT11 GPIO = %d\n", GpioDht);
   if (GpioDht >= 0) {
