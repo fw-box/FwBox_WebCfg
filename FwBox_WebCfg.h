@@ -83,6 +83,7 @@ private:
     String WifiSsid = "";
     String WifiPassword = "";
     bool EarlyBeginRun = false;
+    unsigned long LastWifiConnectTime = 0;
 };
 
 

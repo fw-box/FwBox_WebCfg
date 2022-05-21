@@ -48,6 +48,7 @@ int FwBox_WebCfg::earlyBegin()
     Serial.printf("WIFI_PW : %s\n", WifiPassword.c_str());
 
     WiFi.mode(WIFI_AP_STA);
+    FwBox_WebCfg::LastWifiConnectTime = millis();
     if (WifiSsid.length() > 0) {
         WiFi.begin(WifiSsid.c_str(), WifiPassword.c_str());
     }
@@ -92,6 +93,7 @@ int FwBox_WebCfg::begin()
         Serial.printf("WIFI_PW : %s\n", WifiPassword.c_str());
 
         WiFi.mode(WIFI_AP_STA);
+        FwBox_WebCfg::LastWifiConnectTime = millis();
         if (WifiSsid.length() > 0) {
             WiFi.begin(WifiSsid.c_str(), WifiPassword.c_str());
 
@@ -185,9 +187,28 @@ int FwBox_WebCfg::begin()
 
 void FwBox_WebCfg::handle()
 {
-  if (FwBox_WebCfg::SettingServerRunning == true) {
-    FwBox_WebCfg::SettingServer.handleClient();
-  }
+  
+    if (FwBox_WebCfg::SettingServerRunning == true) {
+        FwBox_WebCfg::SettingServer.handleClient();
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        //
+        // If WiFi is disconnected, retry to connect WiFi every 6 minutes.
+        //
+        if (millis() - FwBox_WebCfg::LastWifiConnectTime > (6 * 60 * 1000)) {
+            FwBox_WebCfg::LastWifiConnectTime = millis();
+            WiFi.mode(WIFI_AP_STA);
+            if (WifiSsid.length() > 0) {
+                WiFi.begin(WifiSsid.c_str(), WifiPassword.c_str());
+            }
+            else {
+                String s_id = getMac().substring(8);
+                s_id = "FW-BOX_" + s_id;
+                WiFi.softAP(s_id.c_str(), "");
+            }
+        }
+    }
 }
 
 void FwBox_WebCfg::handleRoot()
@@ -282,17 +303,16 @@ void FwBox_WebCfg::handleRoot()
     }
     Prefs.end();
 
-    //char temp[2048];
-//#if defined(ESP32)
-//    static const char html_cfg[] PROGMEM = 
-//#else
-//    static const char html_cfg_a[] PROGMEM = 
-//#endif
-    static const char html_cfg_a[] PROGMEM = "<!DOCTYPE html>\
+
+    //
+    // Edit the HTML of web page
+    //
+    static const char html_cfg_a_0[] PROGMEM = "<!DOCTYPE html>\
 <html>\
 <head>\
 <title>FW-BOX : WebCfg</title>\
-<style>\
+<style>";
+    static const char html_cfg_a_1[] PROGMEM = "<!DOCTYPE html>\
 body{font-family:Arial;}\
 form{width:90%%;}\
 p{width:100%%;text-align:center;}\
@@ -301,7 +321,8 @@ input{font-size:4.5vw;}\
 select{font-size:4.5vw;}\
 option{font-size:4.5vw;}\
 .it{background-color:#40E0D0;padding:1vw 0 1vw 0;}\
-.it2{background-color:#1E90FF;padding:1vw 0 1vw 0;}\
+.it2{background-color:#1E90FF;padding:1vw 0 1vw 0;}";
+    static const char html_cfg_a_2[] PROGMEM = "<!DOCTYPE html>\
 </style>\
 </head>\
 <body>\
@@ -319,26 +340,32 @@ option{font-size:4.5vw;}\
 </center>\
 </body>\
 </html>";
-    int content_len = strlen(html_cfg_a);
+
+    //
+    // Calculate the HTML content length
+    //
+    int content_len = strlen(html_cfg_a_0);
+    content_len += strlen(html_cfg_a_1);
+    content_len += strlen(html_cfg_a_2);
     content_len += strlen(str_ssid.c_str());
     content_len += strlen(html_cfg_b);
     content_len += strlen(str_pass.c_str());
     content_len += strlen(html_cfg_c);
     content_len += strlen(str_item_list.c_str());
     content_len += strlen(html_cfg_d);
-    //Serial.printf("Original HTML data length = %d\n", strlen(html_cfg));
 
-    //sprintf_P(temp, html_cfg, str_ssid.c_str(), str_pass.c_str(), str_item_list.c_str());
-    //strcpy(temp, html_cfg);
-
-    //Serial.printf("HTML data length = %d\n", strlen(temp));
+    //
+    // Send the HTML content
+    //
     FwBox_WebCfg::SettingServer.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     FwBox_WebCfg::SettingServer.sendHeader("Pragma", "no-cache");
     FwBox_WebCfg::SettingServer.sendHeader("Expires", "-1");
     FwBox_WebCfg::SettingServer.setContentLength(content_len);
     // here begin chunked transfer
     FwBox_WebCfg::SettingServer.send(200, "text/html", "");
-    FwBox_WebCfg::SettingServer.sendContent(html_cfg_a);
+    FwBox_WebCfg::SettingServer.sendContent(html_cfg_a_0);
+    FwBox_WebCfg::SettingServer.sendContent(html_cfg_a_1);
+    FwBox_WebCfg::SettingServer.sendContent(html_cfg_a_2);
     FwBox_WebCfg::SettingServer.sendContent(str_ssid.c_str());
     FwBox_WebCfg::SettingServer.sendContent(html_cfg_b);
     FwBox_WebCfg::SettingServer.sendContent(str_pass.c_str());
