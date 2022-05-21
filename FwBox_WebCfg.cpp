@@ -291,7 +291,7 @@ void FwBox_WebCfg::handleRoot()
     static const char html_cfg_a[] PROGMEM = "<!DOCTYPE html>\
 <html>\
 <head>\
-<title>fw-box - WebCfg</title>\
+<title>FW-BOX : WebCfg</title>\
 <style>\
 body{font-family:Arial;}\
 form{width:90%%;}\
