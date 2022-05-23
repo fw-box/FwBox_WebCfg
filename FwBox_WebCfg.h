@@ -70,6 +70,7 @@ public:
     static String ItemKey[ITEM_COUNT];
     static int ItemType[ITEM_COUNT];
 
+    void setWiFiApMiddleName(const char* apMiddleName);
     void setItem(int idx, String name, String itemKey);
     void setItem(int idx, String name, String itemKey, int itemType);
     String getItemValueString(const char* key);
@@ -82,6 +83,7 @@ public:
 private:
     String WifiSsid = "";
     String WifiPassword = "";
+    String WiFiApMiddleName = "";
     bool EarlyBeginRun = false;
     unsigned long LastWifiConnectTime = 0;
 };

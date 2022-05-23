@@ -54,7 +54,14 @@ int FwBox_WebCfg::earlyBegin()
     }
     else {
         String s_id = getMac().substring(8);
-        s_id = "FW-BOX_" + s_id;
+        String str_middle = FwBox_WebCfg::WiFiApMiddleName;
+        if (str_middle.length() > 0) {
+            str_middle.toUpperCase();
+            s_id = "FW-BOX_" + str_middle + "_" + s_id;
+        }
+        else
+            s_id = "FW-BOX_" + s_id;
+        Serial.printf("WIFI AP NAME : %s\n", s_id.c_str());
         WiFi.softAP(s_id.c_str(), "");
     }
 
@@ -111,7 +118,14 @@ int FwBox_WebCfg::begin()
         }
         else {
             String s_id = getMac().substring(8);
-            s_id = "FW-BOX_" + s_id;
+            String str_middle = FwBox_WebCfg::WiFiApMiddleName;
+            if (str_middle.length() > 0) {
+                str_middle.toUpperCase();
+                s_id = "FW-BOX_" + str_middle + "_" + s_id;
+            }
+            else
+                s_id = "FW-BOX_" + s_id;
+            Serial.printf("WIFI AP NAME : %s\n", s_id.c_str());
             WiFi.softAP(s_id.c_str(), "");
         }
     }
@@ -204,7 +218,14 @@ void FwBox_WebCfg::handle()
             }
             else {
                 String s_id = getMac().substring(8);
-                s_id = "FW-BOX_" + s_id;
+                String str_middle = FwBox_WebCfg::WiFiApMiddleName;
+                if (str_middle.length() > 0) {
+                    str_middle.toUpperCase();
+                    s_id = "FW-BOX_" + str_middle + "_" + s_id;
+                }
+                else
+                    s_id = "FW-BOX_" + s_id;
+                Serial.printf("WIFI AP NAME : %s\n", s_id.c_str());
                 WiFi.softAP(s_id.c_str(), "");
             }
         }
@@ -382,6 +403,11 @@ option{font-size:4.5vw;}\
         while (1)
             delay(100);
     }
+}
+
+void FwBox_WebCfg::setWiFiApMiddleName(const char* apMiddleName)
+{
+    FwBox_WebCfg::WiFiApMiddleName = apMiddleName;
 }
 
 void FwBox_WebCfg::setItem(int idx, String name, String itemKey)
