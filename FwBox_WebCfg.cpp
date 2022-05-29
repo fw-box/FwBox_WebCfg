@@ -76,17 +76,21 @@ int FwBox_WebCfg::begin()
     Serial.println(FwBox_WebCfg::EarlyBeginRun);
 
     if (FwBox_WebCfg::EarlyBeginRun == true) {
-        for (int ii = 0; ii < 50; ii++) {
-            if (WiFi.status() == WL_CONNECTED)
-                break;
-            delay(500);
-            Serial.print(".");
+        if (WifiSsid.length() > 0) {
+            //
+            // Waiting for WiFi connecting.
+            //
+            for (int ii = 0; ii < 50; ii++) {
+                if (WiFi.status() == WL_CONNECTED)
+                    break;
+                delay(500);
+                Serial.print(".");
+            }
+            Serial.println("");
+            Serial.println("WiFi connected");
+            Serial.println("IP address: ");
+            Serial.println(WiFi.localIP());
         }
-
-        Serial.println("");
-        Serial.println("WiFi connected");
-        Serial.println("IP address: ");
-        Serial.println(WiFi.localIP());
     }
     else {
         FwBox_Preferences Prefs;
