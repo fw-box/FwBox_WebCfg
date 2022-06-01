@@ -61,7 +61,7 @@ int FwBox_WebCfg::earlyBegin()
         }
         else
             s_id = "FW-BOX_" + s_id;
-        Serial.printf("WIFI AP NAME : %s\n", s_id.c_str());
+        Serial.printf("WIFI AP NAME (earlyBegin) : %s\n", s_id.c_str());
         WiFi.softAP(s_id.c_str(), "");
     }
 
@@ -129,7 +129,7 @@ int FwBox_WebCfg::begin()
             }
             else
                 s_id = "FW-BOX_" + s_id;
-            Serial.printf("WIFI AP NAME : %s\n", s_id.c_str());
+            Serial.printf("WIFI AP NAME (begin) : %s\n", s_id.c_str());
             WiFi.softAP(s_id.c_str(), "");
         }
     }
@@ -229,7 +229,7 @@ void FwBox_WebCfg::handle()
                 }
                 else
                     s_id = "FW-BOX_" + s_id;
-                Serial.printf("WIFI AP NAME : %s\n", s_id.c_str());
+                Serial.printf("WIFI AP NAME (handle) : %s\n", s_id.c_str());
                 WiFi.softAP(s_id.c_str(), "");
             }
         }
