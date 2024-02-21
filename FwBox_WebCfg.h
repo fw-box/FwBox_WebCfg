@@ -33,28 +33,34 @@
 #include <PubSubClient.h>
 #include "FwBox_Preferences.h"
 
-#define ITEM_COUNT 5
+#define ITEM_COUNT 6
 #define ITEM_TYPE_STRING 1
 #define ITEM_TYPE_INT 2
 #define ITEM_TYPE_EN_DIS 3
+#define ITEM_TYPE_BUTTON 4
 
 class FwBox_WebCfg
 {
 
 public:
-    FwBox_WebCfg();
+    FwBox_WebCfg ();
 
     //
     // return :
     //          0 - Success
     //          1 - Failed
     //
-    int begin();
-    int earlyBegin();
+    int begin ();
 
-    void handle();
-    String getMac();
-    static void handleRoot();
+    //
+    // return :
+    //          0 - Success
+    //          1 - Failed
+    //
+    int earlyBegin ();
+
+    void handle ();
+    static void handleRoot ();
 
     //const char HTML_CFG_SERVER[] PROGMEM = "<!DOCTYPE html><html><head><title>Module</title><style>td{font-size:30px;padding:10px;} input{font-size:30px;padding:10px;}</style></head><body><center><h1>Chily Module</h1><form action='/' method='post'><table><tr><td>WiFi SSID</td></tr><tr><td><input type='text' name='ssid'></td></tr><tr><td>WiFi Password</td></tr><tr><td><input type='password' name='pw'></td></tr><tr><td>Server IP</td></tr><tr><td><input type='text' name='ip'></td></tr><tr><td colspan='2'><input type='submit'></td></tr></table></form></center></body></html>";
 #if defined(ESP32)
@@ -68,17 +74,24 @@ public:
 
     static String ItemName[ITEM_COUNT];
     static String ItemKey[ITEM_COUNT];
+    static String ItemDescription[ITEM_COUNT];
     static int ItemType[ITEM_COUNT];
+    static int ButtonClickItemIndex;
 
-    void setWiFiApMiddleName(const char* apMiddleName);
-    void setItem(int idx, String name, String itemKey);
-    void setItem(int idx, String name, String itemKey, int itemType);
-    String getItemValueString(const char* key);
-    int getItemValueInt(const char* key, const int32_t defaultValue);
+    void setWiFiApMiddleName (const char* apMiddleName);
+    void setItem (int index, String name, String itemKey);
+    void setItem (int index, String name, String itemKey, int itemType);
+    void setItem (int index, String name, String itemKey, String itemDescription, int itemType);
+    String getItemValueString (const char* key);
+    int getItemValueInt (const char* key, const int32_t defaultValue);
 
-    void configFileBegin();
-    String configFileGetString(const char* key);
-    void configFileEnd();
+    void configFileBegin ();
+    String configFileGetString (const char* key);
+    void configFileEnd ();
+
+    String getMac ();
+    void startSoftAp ();
+    void waitForWifiConnectingAndPrintInfo ();
 
 private:
     String WifiSsid = "";

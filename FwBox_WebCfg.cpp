@@ -24,18 +24,22 @@ bool FwBox_WebCfg::SettingServerRunning = false;
 String FwBox_WebCfg::MqttBrokerIp = "";
 String FwBox_WebCfg::ItemName[ITEM_COUNT];
 String FwBox_WebCfg::ItemKey[ITEM_COUNT];
+String FwBox_WebCfg::ItemDescription[ITEM_COUNT];
 int FwBox_WebCfg::ItemType[ITEM_COUNT];
+int FwBox_WebCfg::ButtonClickItemIndex;
 
-FwBox_WebCfg::FwBox_WebCfg()
+FwBox_WebCfg::FwBox_WebCfg ()
 {
     for (int ii = 0; ii < ITEM_COUNT; ii++) {
         FwBox_WebCfg::ItemName[ii] = "";
         FwBox_WebCfg::ItemKey[ii] = "";
+        FwBox_WebCfg::ItemDescription[ii] = "";
         FwBox_WebCfg::ItemType[ii] = -1;
     }
+    FwBox_WebCfg::ButtonClickItemIndex = -1;
 }
 
-int FwBox_WebCfg::earlyBegin()
+int FwBox_WebCfg::earlyBegin ()
 {
     FwBox_Preferences Prefs;
     Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
@@ -43,6 +47,8 @@ int FwBox_WebCfg::earlyBegin()
     WifiSsid = Prefs.getString("WIFI_SSID");
     WifiPassword = Prefs.getString("WIFI_PW");
     Prefs.end();
+
+    Serial.println("earlyBegin () :");
 
     Serial.printf("WIFI_SSID : %s\n", WifiSsid.c_str());
     Serial.printf("WIFI_PW : %s\n", WifiPassword.c_str());
@@ -53,43 +59,26 @@ int FwBox_WebCfg::earlyBegin()
         WiFi.begin(WifiSsid.c_str(), WifiPassword.c_str());
     }
     else {
-        String s_id = getMac().substring(8);
-        String str_middle = FwBox_WebCfg::WiFiApMiddleName;
-        if (str_middle.length() > 0) {
-            str_middle.toUpperCase();
-            s_id = "FW-BOX_" + str_middle + "_" + s_id;
-        }
-        else
-            s_id = "FW-BOX_" + s_id;
-        Serial.printf("WIFI AP NAME (earlyBegin) : %s\n", s_id.c_str());
-        WiFi.softAP(s_id.c_str(), "");
+        startSoftAp ();
     }
 
     FwBox_WebCfg::EarlyBeginRun = true;
+
+    return 0; // 0 - Success
 }
 
-int FwBox_WebCfg::begin()
+int FwBox_WebCfg::begin ()
 {
     FwBox_WebCfg::SettingServerRunning = false;
 
+    Serial.println("");
+    Serial.println("begin () :");
     Serial.print("FwBox_WebCfg::EarlyBeginRun = ");
     Serial.println(FwBox_WebCfg::EarlyBeginRun);
 
     if (FwBox_WebCfg::EarlyBeginRun == true) {
-        if (WifiSsid.length() > 0) {
-            //
-            // Waiting for WiFi connecting.
-            //
-            for (int ii = 0; ii < 50; ii++) {
-                if (WiFi.status() == WL_CONNECTED)
-                    break;
-                delay(500);
-                Serial.print(".");
-            }
-            Serial.println("");
-            Serial.println("WiFi connected");
-            Serial.println("IP address: ");
-            Serial.println(WiFi.localIP());
+        if (WifiSsid.length () > 0) {
+            waitForWifiConnectingAndPrintInfo ();
         }
     }
     else {
@@ -107,34 +96,15 @@ int FwBox_WebCfg::begin()
         FwBox_WebCfg::LastWifiConnectTime = millis();
         if (WifiSsid.length() > 0) {
             WiFi.begin(WifiSsid.c_str(), WifiPassword.c_str());
-
-            for (int ii = 0; ii < 50; ii++) {
-                if (WiFi.status() == WL_CONNECTED)
-                    break;
-                delay(500);
-                Serial.print(".");
-            }
-
-            Serial.println("");
-            Serial.println("WiFi connected");
-            Serial.println("IP address: ");
-            Serial.println(WiFi.localIP());
+            waitForWifiConnectingAndPrintInfo ();
         }
         else {
-            String s_id = getMac().substring(8);
-            String str_middle = FwBox_WebCfg::WiFiApMiddleName;
-            if (str_middle.length() > 0) {
-                str_middle.toUpperCase();
-                s_id = "FW-BOX_" + str_middle + "_" + s_id;
-            }
-            else
-                s_id = "FW-BOX_" + s_id;
-            Serial.printf("WIFI AP NAME (begin) : %s\n", s_id.c_str());
-            WiFi.softAP(s_id.c_str(), "");
+            startSoftAp ();
         }
     }
 
     FwBox_WebCfg::SettingServer.on("/", handleRoot);
+    FwBox_WebCfg::SettingServer.on("/btn_clk", handleRoot);
 
 #if defined(ESP32)
     FwBox_WebCfg::SettingServer.on("/update", HTTP_POST, []() {
@@ -203,7 +173,7 @@ int FwBox_WebCfg::begin()
     return 1; // Error
 }
 
-void FwBox_WebCfg::handle()
+void FwBox_WebCfg::handle ()
 {
   
     if (FwBox_WebCfg::SettingServerRunning == true) {
@@ -215,9 +185,15 @@ void FwBox_WebCfg::handle()
         // If WiFi is disconnected, retry to connect WiFi every 6 minutes.
         //
         if (millis() - FwBox_WebCfg::LastWifiConnectTime > (6 * 60 * 1000)) {
+            Serial.println("handle () :");
             FwBox_WebCfg::LastWifiConnectTime = millis();
             WiFi.mode(WIFI_AP_STA);
             if (WifiSsid.length() > 0) {
+                
+                Serial.print("WiFi SSID = ");
+                Serial.println(WifiSsid);
+                Serial.print("WiFi PASSWORD = ");
+                Serial.println(WifiPassword);
                 WiFi.begin(WifiSsid.c_str(), WifiPassword.c_str());
             }
             else {
@@ -236,24 +212,37 @@ void FwBox_WebCfg::handle()
     }
 }
 
-void FwBox_WebCfg::handleRoot()
+void FwBox_WebCfg::handleRoot ()
 {
+    String str_ssid_user_input = "";
+    String str_pass_user_input = "";
     String str_ssid = "";
     String str_pass = "";
     //String str_ip = "";
+    bool user_input_wifi = false;
     bool user_input = false;
     FwBox_Preferences Prefs;
     Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
     for (uint8_t ai = 0; ai < FwBox_WebCfg::SettingServer.args(); ai++) {
+        //
+        // Check user's input of Wifi SSID and password.
+        //
         if (FwBox_WebCfg::SettingServer.argName(ai).equals("ssid") == true) {
-            str_ssid = FwBox_WebCfg::SettingServer.arg(ai);
-            user_input = true;
+            str_ssid_user_input = FwBox_WebCfg::SettingServer.arg(ai);
+            user_input_wifi = true;
         }
         else if (FwBox_WebCfg::SettingServer.argName(ai).equals("pw") == true) {
-            str_pass = SettingServer.arg(ai);
-            user_input = true;
+            str_pass_user_input = SettingServer.arg(ai);
+            user_input_wifi = true;
+        }
+        else if (FwBox_WebCfg::SettingServer.argName(ai).equals("item_index") == true) {
+            FwBox_WebCfg::ButtonClickItemIndex = SettingServer.arg(ai).toInt();
+            Serial.println("item_index = " + FwBox_WebCfg::ButtonClickItemIndex);
         }
 
+        //
+        // Check user's input of items and save them to storage.
+        //
         for (int ii = 0; ii < ITEM_COUNT; ii++) {
             if (FwBox_WebCfg::ItemName[ii].length() > 0 && FwBox_WebCfg::ItemKey[ii].length() > 0 && FwBox_WebCfg::ItemType[ii] > 0) {
                 if (FwBox_WebCfg::SettingServer.argName(ai).equals(FwBox_WebCfg::ItemKey[ii]) == true) {
@@ -274,24 +263,35 @@ void FwBox_WebCfg::handleRoot()
             }
         }
     }
+
+    //
+    // Read WIfi SSID and password from storage.
+    //
+    str_ssid = Prefs.getString("WIFI_SSID");
+    str_pass = Prefs.getString("WIFI_PW");
     Prefs.end();
 
-    if (user_input == true) {
-        Serial.print("WEB SSID = ");
-        Serial.println(str_ssid);
-        Serial.print("WEB PASSWORD = ");
-        Serial.println(str_pass);
-        //FwBox_Preferences Prefs;
-        Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
-        /*if (str_ip.length() > 0) {
-            FwBox_WebCfg::MqttBrokerIp = str_ip;
-            Prefs.putString("IP", FwBox_WebCfg::MqttBrokerIp.c_str());
-        }*/
-        if (str_ssid.length() > 0) {
-            Prefs.putString("WIFI_SSID", str_ssid.c_str());
-            Prefs.putString("WIFI_PW", str_pass.c_str());
+    if (user_input_wifi == true) {
+        Serial.println ("User iput :");
+        Serial.print("WiFi SSID = ");
+        Serial.println(str_ssid_user_input);
+        Serial.print("WiFi PASSWORD = ");
+        Serial.println(str_pass_user_input);
+        
+        //
+        // Only save user input SSID and password when they are different from storage's.
+        //
+        if (str_ssid_user_input.equals (str_ssid) == false || str_pass_user_input.equals (str_pass) == false) {
+            Prefs.begin("FW-BOX"); // use "FW-BOX" namespace
+            if (str_ssid_user_input.equals (str_ssid) == false)
+                Prefs.putString("WIFI_SSID", str_ssid_user_input.c_str());
+            if (str_pass_user_input.equals (str_pass) == false)
+                Prefs.putString("WIFI_PW", str_pass_user_input.c_str());
+            Prefs.end();
         }
-        Prefs.end();
+        else {
+            user_input_wifi = false; // SSID and password doesn't change. Set the variable to false.
+        }
     }
 
     String str_item_list = "";
@@ -317,6 +317,10 @@ void FwBox_WebCfg::handleRoot()
                     str_en = " selected";
                 str_item_list += "<p><div class='it'>"+FwBox_WebCfg::ItemName[ii]+"<div><select name='"+FwBox_WebCfg::ItemKey[ii]+"' value='"+i_temp+"'><option value=1"+str_en+">Enable</option><option value=0"+str_dis+">Disable</option></select></div></div></p>";
             }
+            else if (FwBox_WebCfg::ItemType[ii] == ITEM_TYPE_BUTTON) {
+                Serial.println("ITEM_TYPE_BUTTON");
+                str_item_list += "<p><div class='it'>"+FwBox_WebCfg::ItemDescription[ii]+"<div><button onclick=\"window.location.href='/btn_clk?item_index="+ii+"';\">"+FwBox_WebCfg::ItemName[ii]+"</button></div></div></p>";
+            }
             else {
                 String str_temp = Prefs.getString(FwBox_WebCfg::ItemKey[ii].c_str());
                 str_item_list += "<p><div class='it'>"+FwBox_WebCfg::ItemName[ii]+"<div><input type='text' name='"+FwBox_WebCfg::ItemKey[ii]+"' value='"+str_temp+"'></div></div></p>";
@@ -327,7 +331,6 @@ void FwBox_WebCfg::handleRoot()
         }
     }
     Prefs.end();
-
 
     //
     // Edit the HTML of web page
@@ -358,8 +361,11 @@ option{font-size:4.5vw;}\
     static const char html_cfg_b[] PROGMEM = "'></div></div></p>\
 <p><div class='it'>WiFi Password<div><input type='password' name='pw' value='";
     static const char html_cfg_c[] PROGMEM = "'></div></div></p>";
-    static const char html_cfg_d[] PROGMEM = "<p style='text-align:end;'><input type='submit' value=' Submit '></p>\
-</form><br>\
+    static const char html_cfg_d[] PROGMEM = "\
+<p style='text-align:end;'><input type='submit' value=' Submit '></p>\
+</form><br>";
+    static const char html_cfg_e[] PROGMEM = "<h2>Saved</h2>";
+    static const char html_cfg_f[] PROGMEM = "\
 <p><div class='it2'>Firmware Update<div><form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form></div></div></p>\
 <p style='font-size:4.5vw;text-align:end;'><a href='https://fw-box.com'>https://fw-box.com</a></p>\
 </center>\
@@ -378,6 +384,9 @@ option{font-size:4.5vw;}\
     content_len += strlen(html_cfg_c);
     content_len += strlen(str_item_list.c_str());
     content_len += strlen(html_cfg_d);
+    if (user_input == true)
+        content_len += strlen(html_cfg_e);
+    content_len += strlen(html_cfg_f);
 
     //
     // Send the HTML content
@@ -397,10 +406,13 @@ option{font-size:4.5vw;}\
     FwBox_WebCfg::SettingServer.sendContent(html_cfg_c);
     FwBox_WebCfg::SettingServer.sendContent(str_item_list.c_str());
     FwBox_WebCfg::SettingServer.sendContent(html_cfg_d);
+    if (user_input == true)
+        FwBox_WebCfg::SettingServer.sendContent(html_cfg_e);
+    FwBox_WebCfg::SettingServer.sendContent(html_cfg_f);
     FwBox_WebCfg::SettingServer.sendContent(F("")); // this tells web client that transfer is done
     FwBox_WebCfg::SettingServer.client().stop();
 
-    if (user_input == true) {
+    if (user_input_wifi == true) { // When user inputs SSID and password and they are saved into storage. Restart ESP.
         Serial.println("Restarting...");
         delay(5000);
         ESP.restart();
@@ -409,32 +421,43 @@ option{font-size:4.5vw;}\
     }
 }
 
-void FwBox_WebCfg::setWiFiApMiddleName(const char* apMiddleName)
+void FwBox_WebCfg::setWiFiApMiddleName (const char* apMiddleName)
 {
     FwBox_WebCfg::WiFiApMiddleName = apMiddleName;
 }
 
-void FwBox_WebCfg::setItem(int idx, String name, String itemKey)
+void FwBox_WebCfg::setItem (int index, String name, String itemKey)
 {
-    if (idx < 0 && idx >= ITEM_COUNT)
+    if (index < 0 && index >= ITEM_COUNT)
         return;
 
-    FwBox_WebCfg::ItemName[idx] = name;
-    FwBox_WebCfg::ItemKey[idx] = itemKey;
-    FwBox_WebCfg::ItemType[idx] = ITEM_TYPE_STRING;
+    FwBox_WebCfg::ItemName[index] = name;
+    FwBox_WebCfg::ItemKey[index] = itemKey;
+    FwBox_WebCfg::ItemType[index] = ITEM_TYPE_STRING;
 }
 
-void FwBox_WebCfg::setItem(int idx, String name, String itemKey, int itemType)
+void FwBox_WebCfg::setItem (int index, String name, String itemKey, int itemType)
 {
-    if (idx < 0 && idx >= ITEM_COUNT)
+    if (index < 0 && index >= ITEM_COUNT)
         return;
 
-    FwBox_WebCfg::ItemName[idx] = name;
-    FwBox_WebCfg::ItemKey[idx] = itemKey;
-    FwBox_WebCfg::ItemType[idx] = itemType;
+    FwBox_WebCfg::ItemName[index] = name;
+    FwBox_WebCfg::ItemKey[index] = itemKey;
+    FwBox_WebCfg::ItemType[index] = itemType;
 }
 
-String FwBox_WebCfg::getItemValueString(const char* key)
+void FwBox_WebCfg::setItem (int index, String name, String itemKey, String itemDescription, int itemType)
+{
+    if (index < 0 && index >= ITEM_COUNT)
+        return;
+
+    FwBox_WebCfg::ItemName[index] = name;
+    FwBox_WebCfg::ItemKey[index] = itemKey;
+    FwBox_WebCfg::ItemDescription[index] = itemDescription;
+    FwBox_WebCfg::ItemType[index] = itemType;
+}
+
+String FwBox_WebCfg::getItemValueString (const char* key)
 {
     String str_temp = "";
     FwBox_Preferences Prefs;
@@ -444,7 +467,7 @@ String FwBox_WebCfg::getItemValueString(const char* key)
     return str_temp;
 }
 
-int FwBox_WebCfg::getItemValueInt(const char* key, const int32_t defaultValue)
+int FwBox_WebCfg::getItemValueInt (const char* key, const int32_t defaultValue)
 {
     int i_temp = defaultValue;
     FwBox_Preferences Prefs;
@@ -454,9 +477,44 @@ int FwBox_WebCfg::getItemValueInt(const char* key, const int32_t defaultValue)
     return i_temp;
 }
 
-String FwBox_WebCfg::getMac()
+String FwBox_WebCfg::getMac ()
 {
   String str_mac = WiFi.macAddress();
   str_mac.replace(":", "");
   return str_mac;
+}
+
+void FwBox_WebCfg::startSoftAp ()
+{
+    String s_id = getMac().substring(8);
+    String str_middle = FwBox_WebCfg::WiFiApMiddleName;
+    if (str_middle.length() > 0) {
+        str_middle.toUpperCase();
+        s_id = "FW-BOX_" + str_middle + "_" + s_id;
+    }
+    else
+        s_id = "FW-BOX_" + s_id;
+    Serial.printf("WIFI AP NAME (begin) : %s\n", s_id.c_str());
+    WiFi.softAP(s_id.c_str(), "");
+}
+
+void FwBox_WebCfg::waitForWifiConnectingAndPrintInfo ()
+{
+    for (int ii = 0; ii < 50; ii++) {
+        if (WiFi.status() == WL_CONNECTED)
+            break;
+        delay(500);
+        Serial.print(".");
+    }
+
+    Serial.println("");
+    if (WiFi.status () == WL_CONNECTED) {
+        Serial.println ("WiFi connected");
+        Serial.println ("IP address: ");
+        Serial.println (WiFi.localIP());
+    }
+    else {
+        Serial.println ("WiFi disconnected");
+        startSoftAp ();
+    }
 }
